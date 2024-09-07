@@ -5,7 +5,6 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 import datetime
 from flask import Flask, request, jsonify
-from difflib import get_close_matches
 
 app = Flask(__name__)
 
@@ -35,9 +34,6 @@ def process_chunk(chunk):
 data_chunks = pd.read_csv('your_dataset.csv', chunksize=10**6)
 data = pd.concat([process_chunk(chunk) for chunk in data_chunks])
 
-# Get a list of unique item names for matching purposes
-item_names = data['Item Name'].unique()
-
 # Model training
 X = data[['year', 'month', 'day', 'Item Name']]
 y = data['price']
@@ -54,22 +50,16 @@ def predict_price():
         return jsonify({"error": "Item name not provided"}), 400
 
     item_name = item_name.lower()
-
-    # Try to find the item name or the closest match
+    
+    # Try to encode the item name, return 0 if not found
     try:
         encoded_item_name = label_encoder.transform([item_name])[0]
     except ValueError:
-        # Use get_close_matches to find a similar item name
-        closest_match = get_close_matches(item_name, item_names, n=1, cutoff=0.6)
-        
-        if closest_match:
-            item_name = closest_match[0]
-            encoded_item_name = label_encoder.transform([item_name])[0]
-        else:
-            return jsonify({
-                'item': item_name,
-                'predicted_price': 0  # Return 0 if no match is found
-            })
+        # Return 0 if item is not found in the dataset
+        return jsonify({
+            'item': item_name,
+            'predicted_price': 0
+        })
 
     today = datetime.datetime.now()
     today_data = pd.DataFrame({
