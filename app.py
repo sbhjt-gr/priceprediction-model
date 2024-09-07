@@ -1,37 +1,44 @@
-from flask import Flask, request, jsonify
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import LabelEncoder, StandardScaler
+from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
 import datetime
+from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Load the preprocessed dataset (ensure this is stored within the project)
-data = pd.read_csv('your_dataset.csv')
-
-# Data Preprocessing
-data['price'] = data['price'].fillna(data['price'].median())
-data['Date'] = pd.to_datetime(data['Date'], dayfirst=True, errors='coerce')
-data = data.dropna(subset=['Date'])
-data['year'] = data['Date'].dt.year
-data['month'] = data['Date'].dt.month
-data['day'] = data['Date'].dt.day
-data['Item Name'] = data['Item Name'].str.lower()
-data = data[(np.abs(data['price'] - data['price'].mean()) <= (3 * data['price'].std()))]
-
-# Encode 'Item Name' using LabelEncoder
+# Initialize global variables
 label_encoder = LabelEncoder()
-data['Item Name'] = label_encoder.fit_transform(data['Item Name'])
+scaler_X = StandardScaler()
+model = LinearRegression()
+
+# Function to process chunks of data
+def process_chunk(chunk):
+    # Data Preprocessing
+    chunk['price'] = chunk['price'].fillna(chunk['price'].median())
+    chunk['Date'] = pd.to_datetime(chunk['Date'], dayfirst=True, errors='coerce')
+    chunk = chunk.dropna(subset=['Date'])
+    chunk['year'] = chunk['Date'].dt.year
+    chunk['month'] = chunk['Date'].dt.month
+    chunk['day'] = chunk['Date'].dt.day
+    chunk['Item Name'] = chunk['Item Name'].str.lower()
+    chunk = chunk[(np.abs(chunk['price'] - chunk['price'].mean()) <= (3 * chunk['price'].std()))]
+    
+    # Encode 'Item Name'
+    chunk['Item Name'] = label_encoder.fit_transform(chunk['Item Name'])
+    
+    return chunk
+
+# Load and preprocess data in chunks
+data_chunks = pd.read_csv('your_dataset.csv', chunksize=10**6)
+data = pd.concat([process_chunk(chunk) for chunk in data_chunks])
 
 # Model training
 X = data[['year', 'month', 'day', 'Item Name']]
 y = data['price']
-scaler_X = StandardScaler()
 X_scaled = scaler_X.fit_transform(X)
 X_train, X_test, y_train, y_test = train_test_split(X_scaled, y, test_size=0.2, random_state=42)
-model = LinearRegression()
 model.fit(X_train, y_train)
 
 @app.route('/predict', methods=['POST'])
