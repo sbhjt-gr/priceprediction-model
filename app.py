@@ -5,6 +5,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 import datetime
 from flask import Flask, request, jsonify
+from fuzzywuzzy import process  # Import for fuzzy string matching
 
 app = Flask(__name__)
 
@@ -34,6 +35,9 @@ def process_chunk(chunk):
 data_chunks = pd.read_csv('your_dataset.csv', chunksize=10**6)
 data = pd.concat([process_chunk(chunk) for chunk in data_chunks])
 
+# Get a list of unique item names for fuzzy matching
+item_names_list = list(label_encoder.classes_)
+
 # Model training
 X = data[['year', 'month', 'day', 'Item Name']]
 y = data['price']
@@ -50,10 +54,16 @@ def predict_price():
         return jsonify({"error": "Item name not provided"}), 400
 
     item_name = item_name.lower()
-    try:
-        encoded_item_name = label_encoder.transform([item_name])[0]
-    except ValueError:
-        return jsonify({"error": f"Item '{item_name}' not found in the dataset"}), 404
+
+    # Fuzzy matching to find the closest item name
+    closest_match, confidence = process.extractOne(item_name, item_names_list)
+    
+    # Handle unknown item names with a threshold for similarity (e.g., 70%)
+    if confidence < 70:
+        return jsonify({"error": f"No close match found for item '{item_name}'"}), 404
+    
+    # Use the closest match for the prediction
+    encoded_item_name = label_encoder.transform([closest_match])[0]
 
     today = datetime.datetime.now()
     today_data = pd.DataFrame({
@@ -67,8 +77,10 @@ def predict_price():
     predicted_price = model.predict(today_data_scaled)
 
     return jsonify({
-        'item': item_name,
+        'searched_item': item_name,  # The original item name that was searched
+        'matched_item': closest_match,  # The item name that was found as a match
         'predicted_price': round(predicted_price[0], 2),
+        'confidence': confidence,  # The confidence of the match
         'date': today.date().strftime('%Y-%m-%d')
     })
 
