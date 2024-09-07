@@ -5,7 +5,7 @@ from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 import datetime
 from flask import Flask, request, jsonify
-from difflib import get_close_matches  # For finding closest matches
+from difflib import get_close_matches
 
 app = Flask(__name__)
 
@@ -35,8 +35,8 @@ def process_chunk(chunk):
 data_chunks = pd.read_csv('your_dataset.csv', chunksize=10**6)
 data = pd.concat([process_chunk(chunk) for chunk in data_chunks])
 
-# Store the original item names for matching later
-original_item_names = data['Item Name']
+# Get a list of unique item names for matching purposes
+item_names = data['Item Name'].unique()
 
 # Model training
 X = data[['year', 'month', 'day', 'Item Name']]
@@ -55,19 +55,22 @@ def predict_price():
 
     item_name = item_name.lower()
 
-    # Check for an exact match first
+    # Try to find the item name or the closest match
     try:
         encoded_item_name = label_encoder.transform([item_name])[0]
     except ValueError:
-        # Try to find the closest matching item
-        closest_matches = get_close_matches(item_name, original_item_names, n=1, cutoff=0.6)
-        if not closest_matches:
-            return jsonify({"error": f"Item '{item_name}' not found in the dataset"}), 404
-        closest_item_name = closest_matches[0]
-        encoded_item_name = label_encoder.transform([closest_item_name])[0]
-        item_name = closest_item_name  # Update to the matched item name
+        # Use get_close_matches to find a similar item name
+        closest_match = get_close_matches(item_name, item_names, n=1, cutoff=0.6)
+        
+        if closest_match:
+            item_name = closest_match[0]
+            encoded_item_name = label_encoder.transform([item_name])[0]
+        else:
+            return jsonify({
+                'item': item_name,
+                'predicted_price': 0  # Return 0 if no match is found
+            })
 
-    # Get today's date
     today = datetime.datetime.now()
     today_data = pd.DataFrame({
         'year': [today.year],
@@ -81,8 +84,7 @@ def predict_price():
 
     return jsonify({
         'item': item_name,
-        'predicted_price': round(predicted_price[0], 2),
-        'date': today.date().strftime('%Y-%m-%d')
+        'predicted_price': round(predicted_price[0], 2)
     })
 
 if __name__ == '__main__':
